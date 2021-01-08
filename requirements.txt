@@ -1,0 +1,5 @@
+numpy
+pandas
+advent-of-code-data
+flask
+regex

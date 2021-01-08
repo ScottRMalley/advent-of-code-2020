@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+import argparse
+import os
+import os.path
+import pkgutil
+import sys
+import time
+from shutil import copy
+from aocd import submit
+from aocd.get import get_data
+
+import solutions
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mode', help='the mode in which to execute', choices=['run', 'test', 'init', 'submit'],
+                        default='run')
+    parser.add_argument('day', help='the day to execute (1-25)', type=int, nargs='?')
+    parser.add_argument('part', help='the part to execute', nargs='?', choices=['a', 'b'])
+    return parser.parse_args()
+
+
+def get_input(mode, module_name):
+    name = 'test-input' if mode == 'test' else 'input'
+    with open('solutions/{}/{}.txt'.format(module_name, name), 'r') as f:
+        data_input = f.read()
+    return data_input
+
+
+def get_modules(day):
+    available_modules = [i.name for i in pkgutil.iter_modules(solutions.__path__)]
+    if day is None:
+        return {
+            '{}'.format(name): __import__('solutions.{}'.format(name), fromlist=['']) for name in available_modules
+        }
+    if 'day_{}'.format(day) not in available_modules:
+        return None
+    return {f'day_{day}': __import__(f'solutions.day_{day}', fromlist=[''])}
+
+
+def init(day, year):
+    base_path = os.path.join('solutions', 'day_{}'.format(day))
+    if os.path.isdir(base_path):
+        print('Folder for day {} already exists. Cannot initialize.'.format(day))
+        return
+    os.mkdir(base_path)
+
+    python_file_path = os.path.join(base_path, '__init__.py')
+    template_path = os.path.join('templates', '__init__.py.txt')
+    copy(template_path, python_file_path)
+
+    input_data = get_data(day=day, year=year)
+    input_file_path = os.path.join(base_path, 'input.txt')
+    with open(input_file_path, 'w') as f:
+        f.write(input_data)
+
+
+def submit_answer(year, day, part):
+    module_name = 'day_{}'.format(day)
+    module_dict = get_modules(day)
+    selected_module = module_dict[module_name]
+    data_input = get_input('run', module_name)
+    if selected_module is None:
+        print('Day {} module not found'.format(day))
+        sys.exit(1)
+    if data_input is None:
+        print('Could not load data input for day {}'.format(day))
+    if part == 'a':
+        answer = selected_module.part1(data_input)
+        if answer is None:
+            print('Day {} part {} not implemented. Cancelling submission'.format(day, part))
+            sys.exit(1)
+        return submit(answer, year=year, day=day, part='a')
+    elif part == 'b':
+        answer = selected_module.part2(data_input)
+        if answer is None:
+            print('Day {} part {} not implemented. Cancelling submission'.format(day, part))
+            sys.exit(1)
+        return submit(answer, year=year, day=day, part='b')
+    else:
+        print('Invalid part: {}'.format(part))
+        sys.exit(1)
+
+
+def run(part1, part2, data_input):
+    ans1, ans1_time = run_with_time(part1, data_input)
+    ans2, ans2_time = run_with_time(part2, data_input)
+    return {'part': 'a', 'time': ans1_time, 'result': ans1}, {'part': 'b', 'time': ans2_time, 'result': ans2}
+
+
+def run_with_time(part, data_input):
+    start_time = time.time()
+    ans = part(data_input)
+    ans_time = time.time() - start_time
+    return ans, ans_time
+
+
+if __name__ == '__main__':
+    YEAR = 2020
+    args = parse_args()
+    if args.mode == 'init':
+        if args.day is None:
+            print('You must specify a day.')
+            sys.exit(1)
+        init(args.day, YEAR)
+        sys.exit(0)
+
+    if args.mode == 'submit':
+        if args.day is None or args.part is None:
+            print('day and part necessary for submission. Cancelling...')
+        response = submit_answer(YEAR, args.day, args.part)
+        sys.exit(0)
+
+    modules = get_modules(args.day)
+    if modules is None:
+        print('Day {} does not exist'.format(args.day))
+        sys.exit(1)
+    for module in modules:
+        print('-----Running {}-----'.format(module))
+        data = get_input(args.mode, module)
+        statA, statB = run(modules[module].part1, modules[module].part2, data)
+        print(f'Part 1: {statA["result"]}')
+        print(f'Part 2: {statB["result"]}')
+        print('Stats:')
+        print(f'\tTime part 1: {statA["time"]}')
+        print(f'\tTime part 2: {statB["time"]}')
